@@ -1,0 +1,356 @@
+import streamlit as st
+import pandas as pd
+import data_manager as dm
+import plotly.express as px
+
+# --- Page Configuration ---
+st.set_page_config(
+    page_title="PragyanAI Portal",
+    page_icon="🤖",
+    layout="wide",
+)
+
+# --- Styling ---
+st.markdown("""
+<style>
+    /* Main container styling */
+    .main .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+        padding-left: 5rem;
+        padding-right: 5rem;
+    }
+    /* Title styling */
+    h1, h2, h3 {
+        color: #0A2540; /* Primary Blue */
+    }
+    /* Button styling */
+    .stButton>button {
+        background-color: #00C49A; /* Accent Teal */
+        color: white;
+        border-radius: 8px;
+        border: none;
+        padding: 10px 24px;
+        font-weight: bold;
+    }
+    .stButton>button:hover {
+        background-color: #00a180;
+    }
+    /* Metric styling for CRS Gauge */
+    div[data-testid="stMetric"] {
+        background-color: #F6F9FC;
+        border: 1px solid #E6EBF1;
+        border-radius: 10px;
+        padding: 1rem;
+        text-align: center;
+    }
+    div[data-testid="stMetric"] > div:nth-child(2) > div {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #00C49A;
+    }
+    /* Card styling */
+    .card {
+        background-color: #FFFFFF;
+        border: 1px solid #E6EBF1;
+        border-radius: 10px;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+    /* Login container */
+    div[data-testid="stVerticalBlock"] div[data-testid="stVerticalBlock"] {
+        background-color: #F6F9FC;
+        border: 1px solid #E6EBF1;
+        border-radius: 10px;
+        padding: 2rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# --- Session State Initialization ---
+if 'authentication_status' not in st.session_state:
+    st.session_state.authentication_status = None
+if 'user_role' not in st.session_state:
+    st.session_state.user_role = None
+if 'username' not in st.session_state:
+    st.session_state.username = None
+if 'view' not in st.session_state:
+    st.session_state.view = 'main'
+if 'selected_student' not in st.session_state:
+    st.session_state.selected_student = None
+
+# --- Helper Functions ---
+def switch_view(view_name, student_reg_no=None):
+    st.session_state.view = view_name
+    st.session_state.selected_student = student_reg_no
+
+def logout():
+    st.session_state.authentication_status = None
+    st.session_state.user_role = None
+    st.session_state.username = None
+    st.session_state.view = 'main'
+    st.rerun()
+
+# --- LOGIN PAGE ---
+def display_login_page():
+    st.title("Welcome to the PragyanAI Portal")
+    st.write("Please select your role and log in to continue.")
+
+    login_tabs = st.tabs(["Student", "Parent", "Faculty", "Management"])
+
+    # --- Student Login ---
+    with login_tabs[0]:
+        st.header("Student Login")
+        with st.container():
+            student_reg_no = st.text_input("Registration Number", key="student_reg_no", placeholder="e.g., S001")
+            if st.button("Login as Student", key="student_login_btn"):
+                if dm.student_exists(student_reg_no):
+                    st.session_state.authentication_status = True
+                    st.session_state.user_role = 'student'
+                    st.session_state.username = student_reg_no
+                    st.rerun()
+                else:
+                    st.error("Invalid Registration Number.")
+
+    # --- Parent Login ---
+    with login_tabs[1]:
+        st.header("Parent Login")
+        with st.container():
+            parent_reg_no = st.text_input("Student's Registration Number", key="parent_reg_no")
+            parent_password = st.text_input("Password", type="password", key="parent_password")
+            if st.button("Login as Parent", key="parent_login_btn"):
+                if dm.student_exists(parent_reg_no) and parent_password == 'parent123':
+                    st.session_state.authentication_status = True
+                    st.session_state.user_role = 'parent'
+                    st.session_state.username = parent_reg_no
+                    st.rerun()
+                else:
+                    st.error("Invalid credentials.")
+
+    # --- Faculty & Management Logins (combined for simplicity in this version) ---
+    for i, role in enumerate(["Faculty", "Management"]):
+        with login_tabs[i+2]:
+            st.header(f"{role} Login")
+            with st.container():
+                username = st.text_input("Username", key=f"{role.lower()}_user")
+                password = st.text_input("Password", type="password", key=f"{role.lower()}_pass")
+                if st.button(f"Login as {role}", key=f"{role.lower()}_login_btn"):
+                    if username.lower() == role.lower() and password == f'{role.lower()}123':
+                        st.session_state.authentication_status = True
+                        st.session_state.user_role = role.lower()
+                        st.session_state.username = username
+                        st.rerun()
+                    else:
+                        st.error("Invalid credentials.")
+
+# --- DASHBOARDS (POST-LOGIN) ---
+
+def display_admin_portal():
+    st.sidebar.header(f"Welcome, {st.session_state.username.capitalize()}!")
+    st.sidebar.markdown(f"**Role:** `{st.session_state.user_role.capitalize()}`")
+    st.sidebar.button("Logout", on_click=logout, use_container_width=True)
+
+    if st.session_state.view == 'main':
+        st.title("👨‍🎓 Student Data Portal")
+        st.write("Manage and visualize student data.")
+
+        student_df = dm.load_data()
+
+        st.subheader("Departmental CRS Analysis")
+        if not student_df.empty:
+            avg_crs_by_dept = student_df.groupby('Department')['CRS_Score'].mean().reset_index()
+            fig = px.bar(avg_crs_by_dept, x='Department', y='CRS_Score', title='Average Career Readiness Score by Department',
+                         labels={'CRS_Score': 'Average CRS Score'}, color_discrete_sequence=['#00C49A'])
+            st.plotly_chart(fig, use_container_width=True)
+
+        if st.button("➕ Add New Student"):
+            switch_view('add')
+            st.rerun()
+
+        st.header("All Student Records")
+        st.dataframe(student_df, use_container_width=True)
+
+        reg_no_to_edit = st.selectbox("Select a Student to Edit by Registration No:", [""] + list(student_df['RegistrationNo']))
+        if reg_no_to_edit:
+            if st.button("✏️ Edit Selected Student"):
+                switch_view('edit', student_reg_no=reg_no_to_edit)
+                st.rerun()
+    elif st.session_state.view == 'add':
+        display_add_student_form()
+    elif st.session_state.view == 'edit':
+        display_edit_student_form()
+
+def display_student_portal():
+    reg_no = st.session_state.username
+    student_data = dm.get_student_by_reg_no(reg_no)
+
+    st.sidebar.title("Navigation")
+    page = st.sidebar.radio("Go to", ["Dashboard", "Academics", "Skill Portal", "Placements"])
+    st.sidebar.markdown("---")
+    st.sidebar.header(f"Welcome, {student_data['Name'].split()[0]}!")
+    st.sidebar.markdown(f"**Reg. No.:** `{reg_no}`")
+    st.sidebar.button("Logout", on_click=logout, use_container_width=True)
+
+    # --- Profile Header ---
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        st.image("https://placehold.co/150x150/E6EBF1/0A2540?text=Profile", width=150)
+    with col2:
+        st.title(f"Welcome back, {student_data['Name']}!")
+        st.subheader(f"Department of {student_data['Department']}")
+
+    st.markdown("---")
+
+    # --- Main Dashboard View ---
+    if page == "Dashboard":
+        main_col, right_sidebar = st.columns([3, 1])
+        with main_col:
+            st.subheader("Your Career Readiness Score (CRS)")
+            st.metric(label="Score", value=f"{student_data['CRS_Score']} / 1000")
+
+            st.subheader(f"Your Path to becoming a {student_data['Target_Job_Profile']}")
+            st.markdown("""
+                <div class="card">
+                    <p><strong>✓ Completed:</strong> Python Basics</p>
+                    <p><strong>► Current:</strong> Data Structures Course</p>
+                    <p><strong>Next Up:</strong> Enroll in 'SQL for Analysts' to boost CRS</p>
+                    <p><strong>Goal:</strong> Internship Q3 2026</p>
+                </div>
+            """, unsafe_allow_html=True)
+
+            st.subheader("What's Next? (AI Recommendations)")
+            st.markdown("""
+                <div class="card">
+                    <h5>Boost your CRS by 30 points</h5>
+                    <p>The 'Advanced Machine Learning' program starts next week.</p>
+                </div>
+            """, unsafe_allow_html=True)
+            st.button("Enroll Now", key="enroll_ml")
+            st.markdown("""
+                <div class="card">
+                    <h5>Placement Alert</h5>
+                    <p>A new internship at 'FreshWorks' matches your profile. Applications close in 2 days.</p>
+                </div>
+            """, unsafe_allow_html=True)
+            st.button("Quick Apply", key="apply_freshworks")
+
+        with right_sidebar:
+            st.subheader("Notification Feed")
+            st.info("Academic: Assignment 3 Graded")
+            st.warning("Placement: Application for Microsoft internship is closing soon.")
+            
+            st.subheader("Upcoming Deadlines")
+            st.markdown("- **Assignment 4:** Due Tomorrow\n- **Fee Payment:** Due Oct 5th")
+
+    else:
+        st.header(f"{page} Page")
+        st.write(f"Content for {page} goes here. This is a placeholder.")
+
+def display_parent_portal():
+    reg_no = st.session_state.username
+    student_data = dm.get_student_by_reg_no(reg_no)
+
+    st.sidebar.header("Parent Dashboard")
+    st.sidebar.markdown(f"Viewing profile for:")
+    st.sidebar.markdown(f"**{student_data['Name']}** (`{reg_no}`)")
+    st.sidebar.button("Logout", on_click=logout, use_container_width=True)
+
+    st.title(f"Progress Summary for {student_data['Name']}")
+
+    st.subheader("Key Metric Cards")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Career Readiness Score", f"{student_data['CRS_Score']}/1000")
+    col2.metric("Current CGPA", f"{student_data['Current_CGPA']:.2f}")
+    col3.metric("Overall Attendance", f"{student_data['Attendance_Percentage']}%")
+
+    st.markdown("---")
+    
+    st.subheader("Personalized Learning Path (PLP) Progress")
+    st.markdown("""
+        <div class="card">
+            <p><strong>✓ Completed:</strong> Python Basics</p>
+            <p><strong>► Current Focus:</strong> Data Structures Course</p>
+            <p><strong>Upcoming:</strong> 'SQL for Analysts' Program</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.subheader("Recent Achievements")
+    st.success("✅ Completed 'Java Programming' certificate.")
+    st.info("🏆 Enrolled in HackAI 2025 Hackathon.")
+
+
+# --- FORM VIEWS (for Admin) ---
+def display_add_student_form():
+    st.title("➕ Add a New Student")
+    with st.form("add_student_form"):
+        reg_no = st.text_input("Registration Number*")
+        name = st.text_input("Full Name*")
+        department = st.selectbox("Department*", ['Computer Science', 'Electronics', 'Mechanical', 'Civil', 'Biotechnology'])
+        crs_score = st.number_input("Career Readiness Score (CRS)*", 0, 1000)
+        cgpa = st.number_input("Current CGPA*", 0.0, 10.0, format="%.2f")
+        attendance = st.number_input("Attendance (%)*", 0, 100)
+        target_profile = st.text_input("Target Job Profile", placeholder="e.g., Data Scientist")
+
+        if st.form_submit_button("Submit Student Data"):
+            if not all([reg_no, name, department]):
+                 st.error("Please fill in all required fields.")
+            else:
+                student_data = {'RegistrationNo': reg_no, 'Name': name, 'Department': department, 'CRS_Score': crs_score, 'Current_CGPA': cgpa, 'Attendance_Percentage': attendance, 'Target_Job_Profile': target_profile}
+                success, message = dm.add_student(student_data)
+                if success:
+                    st.success(message)
+                    switch_view('main')
+                    st.rerun()
+                else:
+                    st.error(f"Failed to add student: {message}")
+
+    if st.button("⬅️ Back to Portal"):
+        switch_view('main')
+        st.rerun()
+
+def display_edit_student_form():
+    st.title("✏️ Edit Student Information")
+    reg_no = st.session_state.selected_student
+    student = dm.get_student_by_reg_no(reg_no)
+
+    if not student:
+        st.error("Could not find student.")
+        switch_view('main')
+        st.rerun()
+
+    with st.form("edit_student_form"):
+        st.subheader(f"Editing: {student['Name']}")
+        name = st.text_input("Full Name*", value=student['Name'])
+        department = st.selectbox("Department*", ['Computer Science', 'Electronics', 'Mechanical', 'Civil', 'Biotechnology'], index=['Computer Science', 'Electronics', 'Mechanical', 'Civil', 'Biotechnology'].index(student['Department']))
+        crs_score = st.number_input("CRS*", 0, 1000, value=int(student['CRS_Score']))
+        cgpa = st.number_input("CGPA*", 0.0, 10.0, value=float(student['Current_CGPA']), format="%.2f")
+        attendance = st.number_input("Attendance (%)*", 0, 100, value=int(student['Attendance_Percentage']))
+        target_profile = st.text_input("Target Profile", value=student.get('Target_Job_Profile', ''))
+
+        if st.form_submit_button("Save Changes"):
+            updated_data = {'Name': name, 'Department': department, 'CRS_Score': crs_score, 'Current_CGPA': cgpa, 'Attendance_Percentage': attendance, 'Target_Job_Profile': target_profile}
+            success, message = dm.update_student(reg_no, updated_data)
+            if success:
+                st.success(message)
+                switch_view('main')
+                st.rerun()
+            else:
+                st.error(f"Failed to update: {message}")
+
+    if st.button("⬅️ Back to Portal"):
+        switch_view('main')
+        st.rerun()
+
+
+# --- MAIN APP ROUTER ---
+if not st.session_state.authentication_status:
+    display_login_page()
+else:
+    role = st.session_state.user_role
+    if role in ['faculty', 'management']:
+        display_admin_portal()
+    elif role == 'student':
+        display_student_portal()
+    elif role == 'parent':
+        display_parent_portal()
